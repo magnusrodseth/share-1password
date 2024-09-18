@@ -2,7 +2,7 @@
 
 ## What is it?
 
-**Securely share notes with others using 1Password. Perfect for developers sending passwords to clients.**
+**Securely share notes with others using 1Password. Perfect for developers sending credentials to clients.**
 
 I often find myself needing to send `.env` files, credentials, and other sensitive information to others, in particular team members or clients. I would like something as simple as:
 
