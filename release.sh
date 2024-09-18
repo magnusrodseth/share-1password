@@ -54,7 +54,7 @@ function bump_version() {
 
 # Function to commit the change and push it to the remote repository
 function commit_version_change() {
-  git add Cargo.toml Cargo.lock
+  git add Cargo.toml
   git commit -m "Bump version to $new_version"
   git push origin HEAD
   echo "Committed and pushed the new version."
@@ -64,6 +64,16 @@ function commit_version_change() {
 function publish_crate() {
   cargo publish
   echo "Published version $new_version to crates.io."
+}
+
+# Function to commit Cargo.lock if it changed
+function commit_lockfile_change() {
+  if [[ -n $(git status --porcelain Cargo.lock) ]]; then
+    git add Cargo.lock
+    git commit -m "Update Cargo.lock after publishing version $new_version"
+    git push origin HEAD
+    echo "Committed and pushed the Cargo.lock update."
+  fi
 }
 
 # Check for uncommitted changes
@@ -76,3 +86,4 @@ fi
 bump_version
 commit_version_change
 publish_crate
+commit_lockfile_change
