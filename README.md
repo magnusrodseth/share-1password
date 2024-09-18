@@ -2,7 +2,19 @@
 
 ## What is it?
 
-Securely share notes with others using 1Password. Perfect for developers sending passwords to clients.
+**Securely share notes with others using 1Password. Perfect for developers sending passwords to clients.**
+
+I often find myself needing to send `.env` files, credentials, and other sensitive information to others, in particular team members or clients. I would like something as simple as:
+
+1. I pipe the file with the text to share into the CLI program 🚀
+
+2. A secure link to share is copied to my clipboard 📋
+
+3. Simple as that. There is no step 3 ✅
+
+**So I wrote just that! 🎉**
+
+In my opinion, 1Password is the single best password manager out there, so I based my implementation on their CLI.
 
 ## Installation
 
