@@ -1,6 +1,9 @@
 [package]
 name = "share-1password"
+description = "Securely share notes with others using 1Password. Perfect for developers sending passwords to clients."
 version = "0.1.0"
+keywords = ["1password", "cli", "sharing", "security", "passwords"]
+repository = "https://github.com/magnusrodseth/share-1password/tree/main"
 edition = "2021"
 
 [dependencies]
