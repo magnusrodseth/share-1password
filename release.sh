@@ -54,7 +54,7 @@ function bump_version() {
 
 # Function to commit the change and push it to the remote repository
 function commit_version_change() {
-  git add Cargo.toml
+  git add Cargo.toml Cargo.lock
   git commit -m "Bump version to $new_version"
   git push origin HEAD
   echo "Committed and pushed the new version."
