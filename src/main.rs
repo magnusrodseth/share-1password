@@ -1,7 +1,9 @@
+mod note;
+
 use arboard::Clipboard;
 use clap::Parser;
 use serde_json::Value;
-use std::io::{self, Read, Write};
+use std::io::{self, Read};
 use std::process::{Command, Stdio};
 use tempfile::NamedTempFile;
 
@@ -20,6 +22,12 @@ struct Args {
     /// Email addresses to share the item with
     #[arg(long, value_delimiter = ' ', num_args = 1..)]
     emails: Option<Vec<String>>,
+
+    /// Store the text exactly as piped in, without the code fence that stops
+    /// 1Password rendering it as Markdown. Comments become headings and some
+    /// characters are dropped from values. See docs/1password-markdown.md.
+    #[arg(long)]
+    raw: bool,
 }
 
 fn main() -> io::Result<()> {
@@ -75,10 +83,15 @@ fn main() -> io::Result<()> {
 
     // Create a temporary file for the template
     let tmp_template = NamedTempFile::new()?;
-    let mut tmp_env_content = NamedTempFile::new()?;
 
-    // Write the text content to a temporary file
-    writeln!(tmp_env_content, "{}", text_content)?;
+    // 1Password renders notesPlain as Markdown wherever it is displayed,
+    // including the share page the recipient opens. Left raw, a `.env` loses
+    // its comments to headings and loses characters out of its values.
+    let note_body = if args.raw {
+        text_content.clone()
+    } else {
+        note::wrap_in_fence(&text_content)
+    };
 
     // Get the Secure Note template and modify it
     let output = Command::new("op")
@@ -96,8 +109,6 @@ fn main() -> io::Result<()> {
 
     let template: Value =
         serde_json::from_slice(&output.stdout).expect("Invalid JSON from template");
-    let content =
-        std::fs::read_to_string(tmp_env_content.path()).expect("Failed to read text content");
 
     let mut modified_template = template.clone();
     if let Some(fields) = modified_template
@@ -106,7 +117,7 @@ fn main() -> io::Result<()> {
     {
         for field in fields {
             if field.get("id").and_then(|id| id.as_str()) == Some("notesPlain") {
-                field["value"] = content.clone().into();
+                field["value"] = note_body.clone().into();
             }
         }
     }
@@ -159,6 +170,31 @@ fn main() -> io::Result<()> {
         return Ok(());
     }
 
+    // Read the item back and prove 1Password stored our bytes unchanged. A
+    // share link is only worth sending if the content behind it is intact, so
+    // a mismatch deletes the item rather than handing out a corrupted secret.
+    if let Err(error) =
+        verify_stored_note(item_id, &args.vault, &note_body, &text_content, args.raw)
+    {
+        eprintln!("{error}");
+        eprintln!("Deleting the item instead of sharing it.");
+
+        let cleanup = Command::new("op")
+            .arg("item")
+            .arg("delete")
+            .arg(item_id)
+            .arg("--vault")
+            .arg(&args.vault)
+            .output();
+
+        match cleanup {
+            Ok(output) if output.status.success() => eprintln!("Deleted item {item_id}."),
+            _ => eprintln!("Could not delete item {item_id}. Remove it manually."),
+        }
+
+        std::process::exit(1);
+    }
+
     // Generate a shareable link
     let mut share_command = Command::new("op");
     share_command
@@ -195,4 +231,71 @@ fn main() -> io::Result<()> {
     println!("{}", share_link);
 
     Ok(())
+}
+
+/// Confirm the note 1Password stored is the note we sent, and that the original
+/// text is still recoverable from it.
+///
+/// `op item create` reports success on the API call, not on the bytes that
+/// landed. Reading the item back is what turns "probably fine" into a check.
+fn verify_stored_note(
+    item_id: &str,
+    vault: &str,
+    sent: &str,
+    original: &str,
+    raw: bool,
+) -> Result<(), String> {
+    let output = Command::new("op")
+        .arg("item")
+        .arg("get")
+        .arg(item_id)
+        .arg("--vault")
+        .arg(vault)
+        .arg("--format=json")
+        .output()
+        .map_err(|error| format!("Failed to read the item back from 1Password: {error}"))?;
+
+    if !output.status.success() {
+        return Err(format!(
+            "Could not read the item back to verify it: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        ));
+    }
+
+    let item: Value = serde_json::from_slice(&output.stdout)
+        .map_err(|error| format!("Invalid JSON when reading the item back: {error}"))?;
+
+    let stored = item
+        .get("fields")
+        .and_then(|fields| fields.as_array())
+        .and_then(|fields| {
+            fields
+                .iter()
+                .find(|field| field.get("id").and_then(|id| id.as_str()) == Some("notesPlain"))
+        })
+        .and_then(|field| field.get("value"))
+        .and_then(|value| value.as_str())
+        .ok_or_else(|| "The stored item has no note content.".to_string())?;
+
+    if stored != sent {
+        return Err(format!(
+            "The note 1Password stored differs from the text that was sent \
+             ({} bytes sent, {} bytes stored).",
+            sent.len(),
+            stored.len()
+        ));
+    }
+
+    if raw {
+        return Ok(());
+    }
+
+    // The fence absorbs one trailing newline, which is what the recipient would
+    // get back from copying the rendered block.
+    let expected = original.strip_suffix('\n').unwrap_or(original);
+    match note::unwrap_fence(stored) {
+        Some(recovered) if recovered == expected => Ok(()),
+        Some(_) => Err("The stored note does not unwrap back to the original text.".to_string()),
+        None => Err("The stored note is not the code block that was sent.".to_string()),
+    }
 }

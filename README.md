@@ -54,7 +54,29 @@ cat <file> | share-1password --vault <vault-name>
 
 # Use `--emails` to specify the emails to share the note with. Default to anyone with the link.
 cat <file> | share-1password --emails <email1> <email2> <email3>
+
+# Use `--raw` to store the text as-is and let 1Password render it as Markdown
+cat <file> | share-1password --raw
 ```
+
+## How the content is stored
+
+1Password renders a shared note as Markdown on the page the recipient opens. A
+`.env` piped in unchanged comes out mangled: `# comments` turn into headings, and
+values lose characters, so `SECRET=_a_*b*` arrives as `SECRET=ab`. Nothing warns
+either side.
+
+So `share-1password` wraps the content in a code fence before storing it. The
+recipient sees the file verbatim in a monospace block and can copy it back out
+byte for byte, comments included. After creating the item the CLI reads it back
+and checks the stored text still unwraps to what was piped in; if it does not,
+the item is deleted instead of shared.
+
+Pass `--raw` to skip the fence and get the old behaviour, which is what you want
+when the note is prose and the Markdown formatting is the point.
+
+[`docs/1password-markdown.md`](docs/1password-markdown.md) records what was
+measured, including the escape routes that do not work.
 
 ✂️ Note that `share-1password` automatically copies the link of the shared note to your clipboard.
 
